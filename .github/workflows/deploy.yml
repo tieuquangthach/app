@@ -10,22 +10,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: 18
-
       - name: Install and Build
         run: |
           npm install
           npm run build
-          # Kiểm tra xem thư mục dist có tồn tại không
-          ls -R dist 
-
       - name: Deploy
         uses: JamesIves/github-pages-deploy-action@v4
         with:
-          folder: dist # Đảm bảo robot lấy từ thư mục này
+          folder: dist # Thư mục chứa cả index.html và assets
           branch: gh-pages
           clean: true
