@@ -1,6 +1,17 @@
+
 export interface QuizQuestion {
+  id: string; // Thêm ID để quản lý trạng thái local
   cauHoi: string;
   dapAn: string;
+  loaiCauHoi: QuestionType;
+  huongDanChamDiem: string;
+  drawingCode?: string; // Mã JS để vẽ hình học nếu cần
+  metadata?: {
+    chuDe: string;
+    noiDung: string;
+    yeuCauCanDat: string;
+    mucDo: CognitiveLevelDoc;
+  };
 }
 
 export const COGNITIVE_LEVELS_DOC = ['Biết', 'Hiểu', 'Vận dụng'] as const;
@@ -15,6 +26,7 @@ export interface MatrixRow {
   id: string; 
   topic: string;
   knowledgeUnit: string;
+  learningOutcome?: string; // Trường mới: Yêu cầu cần đạt
   percentage: number;
   counts: Record<QuestionType, LevelCountsDoc>;
 }
@@ -49,49 +61,49 @@ export const themes: Theme[] = [
   {
     name: 'Mặc định',
     colors: {
-      'primary': '#4338ca', // indigo-700
-      'secondary': '#16a34a', // green-600
+      'primary': '#1e3a8a', // blue-900
+      'secondary': '#15803d', // green-700
       'gradient-from': '#e0f2fe', // sky-100
-      'gradient-to': '#c7d2fe', // indigo-200
-      'text-main': '#1f2937', // gray-800
-      'text-muted': '#4b5563', // gray-600
-      'text-accent': '#4f46e5', // indigo-600
+      'gradient-to': '#eef2ff', // indigo-50
+      'text-main': '#020617', // slate-950 (Đen đậm sắc nét)
+      'text-muted': '#334155', // slate-700
+      'text-accent': '#1d4ed8', // blue-700
     },
   },
   {
     name: 'Hoàng hôn',
     colors: {
-      'primary': '#ea580c', // orange-600
-      'secondary': '#dc2626', // red-600
+      'primary': '#9a3412', // orange-800
+      'secondary': '#991b1b', // red-800
       'gradient-from': '#fff7ed', // orange-50
-      'gradient-to': '#fee2e2', // red-100
-      'text-main': '#1f2937',
-      'text-muted': '#4b5563',
-      'text-accent': '#f97316', // orange-500
+      'gradient-to': '#fef2f2', // red-50
+      'text-main': '#2a0a04', // stone-950 (Nâu đen đậm)
+      'text-muted': '#44403c', // stone-700
+      'text-accent': '#ea580c', // orange-600
     },
   },
   {
     name: 'Đại dương',
     colors: {
-      'primary': '#2563eb', // blue-600
-      'secondary': '#0d9488', // teal-600
-      'gradient-from': '#ecfeff', // cyan-50
-      'gradient-to': '#dbeafe', // blue-100
-      'text-main': '#1f2937',
-      'text-muted': '#4b5563',
-      'text-accent': '#3b82f6', // blue-500
+      'primary': '#075985', // sky-800
+      'secondary': '#0f766e', // teal-700
+      'gradient-from': '#f0f9ff', // sky-50
+      'gradient-to': '#e0f2fe', // sky-100
+      'text-main': '#082f49', // sky-950 (Xanh đen đậm)
+      'text-muted': '#334155', // slate-700
+      'text-accent': '#0284c7', // sky-600
     },
   },
   {
     name: 'Rừng xanh',
     colors: {
-      'primary': '#166534', // green-800
-      'secondary': '#65a30d', // lime-600
+      'primary': '#14532d', // green-900
+      'secondary': '#3f6212', // lime-800
       'gradient-from': '#f0fdf4', // green-50
       'gradient-to': '#ecfccb', // lime-100
-      'text-main': '#1f2937',
-      'text-muted': '#4b5563',
-      'text-accent': '#22c55e', // green-500
+      'text-main': '#022c22', // emerald-950 (Xanh lá đen đậm)
+      'text-muted': '#166534', // green-700
+      'text-accent': '#15803d', // green-700
     },
   },
 ];
@@ -101,17 +113,4 @@ export const QUESTION_TYPE_POINTS: Record<QuestionType, number> = {
   'Đúng - Sai': 1.0,
   'Trả lời ngắn': 0.5,
   'Tự luận': 1.0,
-};
-
-export const QUESTION_TYPE_TARGETS: Record<QuestionType, number> = {
-  'Nhiều lựa chọn': 12,
-  'Đúng - Sai': 2,
-  'Trả lời ngắn': 4,
-  'Tự luận': 3,
-};
-
-export const COGNITIVE_LEVEL_TARGET_POINTS: Record<CognitiveLevelDoc, number> = {
-  'Biết': 4,
-  'Hiểu': 3,
-  'Vận dụng': 3,
 };

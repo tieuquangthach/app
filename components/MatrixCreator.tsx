@@ -1,6 +1,8 @@
+
 import React, { useMemo, useState } from 'react';
-import { MatrixRow, QUESTION_TYPES, COGNITIVE_LEVELS_DOC, QuestionType, CognitiveLevelDoc, QUESTION_TYPE_POINTS, QUESTION_TYPE_TARGETS, COGNITIVE_LEVEL_TARGET_POINTS } from '../types';
-import { mathContentData } from '../data/mathContent';
+import { MatrixRow, QUESTION_TYPES, COGNITIVE_LEVELS_DOC, QuestionType, CognitiveLevelDoc, QUESTION_TYPE_POINTS, LevelCountsDoc } from '../types';
+import { subjectContentData, KnowledgeUnit } from '../data/mathContent';
+import { MathText } from './QuizDisplay';
 
 interface MatrixCreatorProps {
   matrix: MatrixRow[];
@@ -9,616 +11,381 @@ interface MatrixCreatorProps {
   isLoading: boolean;
   selectedClass: string;
   onClassChange: (value: string) => void;
+  selectedSubject: string;
+  onSubjectChange: (value: string) => void;
+  hasGeneratedQuiz?: boolean;
+  onReturnToQuiz?: () => void;
 }
 
-const MatrixCreator: React.FC<MatrixCreatorProps> = ({ matrix, setMatrix, onSubmit, isLoading, selectedClass, onClassChange }) => {
-  const [copyButtonText, setCopyButtonText] = useState('Sao chép Markdown');
-  const topicsForClass = mathContentData[selectedClass] || [];
+const MatrixCreator: React.FC<MatrixCreatorProps> = ({ matrix, setMatrix, onSubmit, isLoading, selectedClass, onClassChange, selectedSubject, onSubjectChange, hasGeneratedQuiz, onReturnToQuiz }) => {
+  const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  
+  const [modalData, setModalData] = useState({
+    topic: '',
+    knowledgeUnit: '',
+    learningOutcome: '',
+    qType: QUESTION_TYPES[0] as QuestionType,
+    level: COGNITIVE_LEVELS_DOC[0] as CognitiveLevelDoc,
+    count: 1
+  });
 
-  const handleAddRow = () => {
-    const newRow: MatrixRow = {
-      id: new Date().toISOString(),
+  const topicsForClass = subjectContentData[selectedSubject]?.[selectedClass] || [];
+
+  const handleOpenModal = () => setIsModalOpen(true);
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setModalData({
       topic: '',
       knowledgeUnit: '',
-      percentage: 0,
-      counts: QUESTION_TYPES.reduce((acc, type) => {
-        acc[type] = COGNITIVE_LEVELS_DOC.reduce((levelAcc, level) => {
-          levelAcc[level] = 0;
-          return levelAcc;
-        }, {} as any);
-        return acc;
-      }, {} as any),
-    };
-    setMatrix([...matrix, newRow]);
+      learningOutcome: '',
+      qType: QUESTION_TYPES[0],
+      level: COGNITIVE_LEVELS_DOC[0],
+      count: 1
+    });
+  };
+
+  const handleSaveModal = () => {
+    if (!modalData.topic || !modalData.knowledgeUnit) return;
+    const existingRowIndex = matrix.findIndex(r => r.topic === modalData.topic && r.knowledgeUnit === modalData.knowledgeUnit);
+    
+    if (existingRowIndex > -1) {
+      const newMatrix = [...matrix];
+      const updatedRow = { ...newMatrix[existingRowIndex] };
+      const newCounts = JSON.parse(JSON.stringify(updatedRow.counts));
+      newCounts[modalData.qType][modalData.level] = (newCounts[modalData.qType][modalData.level] || 0) + modalData.count;
+      updatedRow.counts = newCounts;
+      if (!updatedRow.learningOutcome) updatedRow.learningOutcome = modalData.learningOutcome;
+      
+      let rowPoints = 0;
+      for (const type of QUESTION_TYPES) {
+        const typeTotalInRow = COGNITIVE_LEVELS_DOC.reduce((sum: number, lvl) => sum + (Number(updatedRow.counts[type][lvl]) || 0), 0);
+        rowPoints += typeTotalInRow * QUESTION_TYPE_POINTS[type];
+      }
+      updatedRow.percentage = parseFloat((rowPoints * 10).toFixed(2));
+      newMatrix[existingRowIndex] = updatedRow;
+      setMatrix(newMatrix);
+    } else {
+      const newRow: MatrixRow = {
+        id: new Date().toISOString() + Math.random(),
+        topic: modalData.topic,
+        knowledgeUnit: modalData.knowledgeUnit,
+        learningOutcome: modalData.learningOutcome,
+        percentage: 0,
+        counts: QUESTION_TYPES.reduce((acc, type) => {
+          acc[type] = COGNITIVE_LEVELS_DOC.reduce((levelAcc, level) => {
+            levelAcc[level] = type === modalData.qType && level === modalData.level ? modalData.count : 0;
+            return levelAcc;
+          }, {} as any);
+          return acc;
+        }, {} as any),
+      };
+      let rowPoints = modalData.count * QUESTION_TYPE_POINTS[modalData.qType];
+      newRow.percentage = parseFloat((rowPoints * 10).toFixed(2));
+      setMatrix([...matrix, newRow]);
+    }
+    handleCloseModal();
   };
 
   const handleRemoveRow = (id: string) => {
-    if (matrix.length > 1) {
-      setMatrix(matrix.filter(row => row.id !== id));
-    }
+    setMatrix(matrix.filter(row => row.id !== id));
   };
-
-  const handleUpdate = (id: string, field: 'topic' | 'knowledgeUnit' | 'count', value: any, qType?: QuestionType, level?: CognitiveLevelDoc) => {
+  
+  const handleCountChange = (id: string, qType: QuestionType, level: CognitiveLevelDoc, value: number) => {
+    const rowToUpdate = matrix.find(r => r.id === id);
+    if (!rowToUpdate) return;
+    const newCounts = JSON.parse(JSON.stringify(rowToUpdate.counts)) as Record<QuestionType, LevelCountsDoc>;
+    newCounts[qType][level] = value;
+    
     setMatrix(currentMatrix =>
       currentMatrix.map(row => {
-        if (row.id !== id) {
-          return row;
-        }
-
-        let updatedRow = { ...row };
-
-        if (field === 'topic') {
-          const newTopicData = topicsForClass.find(t => t.name === value);
-          const firstKnowledgeUnit = newTopicData?.knowledgeUnits[0] || '';
-          updatedRow = { ...updatedRow, topic: value, knowledgeUnit: firstKnowledgeUnit };
-        } else if (field === 'knowledgeUnit') {
-          updatedRow = { ...updatedRow, knowledgeUnit: value };
-        } else if (field === 'count' && qType && level) {
-          const newCounts = { ...updatedRow.counts };
-          newCounts[qType] = { ...newCounts[qType], [level]: value };
-          updatedRow = { ...updatedRow, counts: newCounts };
-        }
-
-        // Always recalculate percentage for the modified row
+        if (row.id !== id) return row;
+        const updatedRow = { ...row, counts: newCounts };
         let rowPoints = 0;
         for (const type of QUESTION_TYPES) {
-          const typeTotalInRow = COGNITIVE_LEVELS_DOC.reduce((sum, lvl) => sum + (Number(updatedRow.counts[type][lvl]) || 0), 0);
+          const typeTotalInRow = COGNITIVE_LEVELS_DOC.reduce((sum: number, lvl) => sum + (Number((updatedRow.counts as any)[type][lvl]) || 0), 0);
           rowPoints += typeTotalInRow * QUESTION_TYPE_POINTS[type];
         }
         updatedRow.percentage = parseFloat((rowPoints * 10).toFixed(2));
-
         return updatedRow;
       })
     );
   };
 
+  const getOutcomeOptions = (topicName: string, unitName: string) => {
+    const topic = topicsForClass.find(t => t.name === topicName);
+    const unit = topic?.knowledgeUnits.find(ku => (typeof ku === 'string' ? ku : ku.unit) === unitName);
+    if (!unit) return [];
+    if (typeof unit === 'string') return [unit];
+    
+    if (Array.isArray(unit.learningOutcome)) {
+      return unit.learningOutcome;
+    }
+    return (unit.learningOutcome as string).split('. ').filter(s => s.trim().length > 0).map(s => s.endsWith('.') ? s : s + '.');
+  };
 
-  const totalQuestions = useMemo(() => {
-    return matrix.reduce((total, row) => {
-      let rowTotal = 0;
-      for (const qType of QUESTION_TYPES) {
-        rowTotal += Object.values(row.counts[qType]).reduce<number>((sum, count) => sum + (Number(count) || 0), 0);
-      }
-      return total + rowTotal;
-    }, 0);
-  }, [matrix]);
-
-  const totalPercentage = useMemo(() => {
-    return matrix.reduce((total, row) => total + (Number(row.percentage) || 0), 0);
-  }, [matrix]);
-  
-  const totalsByQuestionType = useMemo(() => {
-    const totals = {} as Record<QuestionType, number>;
-    QUESTION_TYPES.forEach(qType => {
-        totals[qType] = matrix.reduce((total, row) => {
-            const rowQTypeTotal = COGNITIVE_LEVELS_DOC.reduce((sum, level) => {
-                return sum + (Number(row.counts[qType][level]) || 0);
-            }, 0);
-            return total + rowQTypeTotal;
-        }, 0);
-    });
-    return totals;
-  }, [matrix]);
-  
   const columnTotals = useMemo(() => {
     const totals = QUESTION_TYPES.reduce((acc, qType) => {
-        acc[qType] = COGNITIVE_LEVELS_DOC.reduce((levelAcc, level) => {
-            levelAcc[level] = 0;
-            return levelAcc;
-        }, {} as Record<CognitiveLevelDoc, number>);
+        acc[qType] = COGNITIVE_LEVELS_DOC.reduce((levelAcc, level) => { levelAcc[level] = 0; return levelAcc; }, {} as Record<CognitiveLevelDoc, number>);
         return acc;
     }, {} as Record<QuestionType, Record<CognitiveLevelDoc, number>>);
-
     matrix.forEach(row => {
         QUESTION_TYPES.forEach(qType => {
-            COGNITIVE_LEVELS_DOC.forEach(level => {
-                totals[qType][level] += (Number(row.counts[qType][level]) || 0);
-            });
+            COGNITIVE_LEVELS_DOC.forEach(level => { totals[qType][level] += (Number(row.counts[qType][level]) || 0); });
         });
     });
-
     return totals;
   }, [matrix]);
-
-  const grandTotalsByLevel = useMemo(() => {
-    const totals = {} as Record<CognitiveLevelDoc, number>;
-    COGNITIVE_LEVELS_DOC.forEach(level => {
-      totals[level] = matrix.reduce((total, row) => {
-        const rowLevelTotal = QUESTION_TYPES.reduce((sum, qType) => {
-          return sum + (Number(row.counts[qType][level]) || 0);
-        }, 0);
-        return total + rowLevelTotal;
-      }, 0);
-    });
-    return totals;
-  }, [matrix]);
-
-  const totalPoints = useMemo(() => totalPercentage / 10, [totalPercentage]);
-
-  const columnPoints = useMemo(() => {
-      const points = {} as Record<QuestionType, Record<CognitiveLevelDoc, number>>;
-      QUESTION_TYPES.forEach(qType => {
-          points[qType] = COGNITIVE_LEVELS_DOC.reduce((levelAcc, level) => {
-              const count = columnTotals[qType][level];
-              levelAcc[level] = count * QUESTION_TYPE_POINTS[qType];
-              return levelAcc;
-          }, {} as Record<CognitiveLevelDoc, number>);
-      });
-      return points;
-  }, [columnTotals]);
 
   const grandTotalPointsByLevel = useMemo(() => {
       const totals = {} as Record<CognitiveLevelDoc, number>;
       COGNITIVE_LEVELS_DOC.forEach(level => {
-        totals[level] = QUESTION_TYPES.reduce((sum, qType) => sum + (columnPoints[qType][level] || 0), 0);
+        totals[level] = QUESTION_TYPES.reduce((sum: number, qType) => sum + (columnTotals[qType][level] * QUESTION_TYPE_POINTS[qType]), 0);
       });
       return totals;
-  }, [columnPoints]);
+  }, [columnTotals]);
+
+  const totalPoints = useMemo(() => Object.values(grandTotalPointsByLevel).reduce((a: number, b: number) => a + b, 0), [grandTotalPointsByLevel]);
 
   const isSubmittable = useMemo(() => {
-    const allQuestionTypeTargetsMet = QUESTION_TYPES.every(qType => totalsByQuestionType[qType] === QUESTION_TYPE_TARGETS[qType]);
-    
-    const allCognitiveLevelPointsMet = COGNITIVE_LEVELS_DOC.every(level => {
-      const currentPoints = grandTotalPointsByLevel[level];
-      const targetPoints = COGNITIVE_LEVEL_TARGET_POINTS[level];
-      return Math.abs(currentPoints - targetPoints) < 0.01;
-    });
+    let totalQuestionsCount = 0;
+    for (const qType of QUESTION_TYPES) {
+      for (const level of COGNITIVE_LEVELS_DOC) {
+        totalQuestionsCount += (columnTotals[qType][level] || 0);
+      }
+    }
+    return matrix.length > 0 && totalQuestionsCount > 0;
+  }, [matrix, columnTotals]);
 
-    const allRowsValid = matrix.every(row => {
-        const rowTotal = QUESTION_TYPES.reduce((sum, qType) => sum + COGNITIVE_LEVELS_DOC.reduce((lsum, level) => lsum + (Number(row.counts[qType][level]) || 0), 0), 0);
-        if (rowTotal > 0) {
-            return !!row.topic.trim() && !!row.knowledgeUnit.trim();
-        }
-        return true; // Empty rows are considered valid
-    });
-
-    return allQuestionTypeTargetsMet && allCognitiveLevelPointsMet && allRowsValid;
-  }, [matrix, totalsByQuestionType, grandTotalPointsByLevel]);
-
-
-  const handleCopyMarkdown = () => {
-    let md = '';
-
-    // Header
-    const headerLevels = QUESTION_TYPES.flatMap(qType => COGNITIVE_LEVELS_DOC.map(level => `${qType} (${level})`));
-    const totalLevels = COGNITIVE_LEVELS_DOC.map(level => `Tổng (${level})`);
-    md += `| STT | Chủ đề/Chương | Nội dung/đơn vị kiến thức | ${headerLevels.join(' | ')} | ${totalLevels.join(' | ')} | Tỉ lệ % điểm |\n`;
-
-    // Separator
-    md += `|:---:|:---|:---|${headerLevels.map(() => ':---:').join('|')}|${totalLevels.map(() => ':---:').join('|')}|:---:|\n`;
-
-    // Body
-    matrix.forEach((row, index) => {
-        const rowTotalsByLevel = COGNITIVE_LEVELS_DOC.reduce((acc, level) => {
-          acc[level] = QUESTION_TYPES.reduce((sum, qType) => sum + (Number(row.counts[qType][level]) || 0), 0);
-          return acc;
-        }, {} as Record<CognitiveLevelDoc, number>);
-
-        const countsStr = QUESTION_TYPES.flatMap(qType => COGNITIVE_LEVELS_DOC.map(level => row.counts[qType][level] || 0));
-        const totalsStr = COGNITIVE_LEVELS_DOC.map(level => rowTotalsByLevel[level]);
-        md += `| ${index + 1} | ${row.topic || ''} | ${row.knowledgeUnit || ''} | ${countsStr.join(' | ')} | ${totalsStr.join(' | ')} | ${row.percentage} |\n`;
-    });
-
-    md += `|---|---|---|${headerLevels.map(() => '---').join('|')}|${totalLevels.map(() => '---').join('|')}|---|\n`; // Footer separator
-
-    // Footer - Total Questions
-    const totalCountsStr = QUESTION_TYPES.flatMap(qType => COGNITIVE_LEVELS_DOC.map(level => columnTotals[qType][level]));
-    const grandTotalCountsStr = COGNITIVE_LEVELS_DOC.map(level => grandTotalsByLevel[level]);
-    md += `| **TỔNG SỐ CÂU** | | | ${totalCountsStr.join(' | ')} | ${grandTotalCountsStr.join(' | ')} | **${totalQuestions}** |\n`;
-
-    // Footer - Total Points
-    const totalPointsStr = QUESTION_TYPES.flatMap(qType => COGNITIVE_LEVELS_DOC.map(level => columnPoints[qType][level].toFixed(2)));
-    const grandTotalPointsStr = COGNITIVE_LEVELS_DOC.map(level => grandTotalPointsByLevel[level].toFixed(2));
-    md += `| **TỔNG SỐ ĐIỂM** | | | ${totalPointsStr.join(' | ')} | ${grandTotalPointsStr.join(' | ')} | **${totalPoints.toFixed(2)}** |\n`;
-
-    // Footer - Total Percentage
-    const totalPercentsStr = QUESTION_TYPES.flatMap(qType => COGNITIVE_LEVELS_DOC.map(level => `${(columnPoints[qType][level] * 10).toFixed(0)}%`));
-    const grandTotalPercentsStr = COGNITIVE_LEVELS_DOC.map(level => `${(grandTotalPointsByLevel[level] * 10).toFixed(0)}%`);
-    md += `| **TỈ LỆ %** | | | ${totalPercentsStr.join(' | ')} | ${grandTotalPercentsStr.join(' | ')} | **${totalPercentage.toFixed(0)}%** |\n`;
-
-    navigator.clipboard.writeText(md).then(() => {
-        setCopyButtonText('Đã sao chép!');
-        setTimeout(() => setCopyButtonText('Sao chép Markdown'), 2000);
-    }).catch(err => {
-        console.error('Không thể sao chép Markdown Ma Trận:', err);
-        setCopyButtonText('Lỗi!');
-        setTimeout(() => setCopyButtonText('Sao chép Markdown'), 2000);
-    });
-  };
-  
-  const handleDownloadMatrixWord = () => {
-    const styles = `
-      body { font-family: 'Times New Roman', serif; }
-      table { border-collapse: collapse; width: 100%; font-size: 10pt; }
-      th, td { border: 1px solid black; padding: 5px; text-align: center; vertical-align: middle; }
-      th { background-color: #f2f2f2; font-weight: bold; }
-      .text-left { text-align: left; }
-      .font-bold { font-weight: bold; }
-    `;
-
-    let htmlContent = `
-        <!DOCTYPE html>
-        <html lang="vi">
-        <head>
-            <meta charset="UTF-8">
-            <title>Ma Trận Đề Kiểm Tra</title>
-            <style>${styles}</style>
-        </head>
-        <body>
-            <h2 style="text-align: center;">MA TRẬN ĐỀ KIỂM TRA</h2>
-            <table border="1">
-    `;
-
-    // Table Header
-    htmlContent += `
-        <thead class="bg-gray-50 text-center align-middle">
-            <tr>
-                <th rowspan="3">STT</th>
-                <th rowspan="3">Chủ đề/Chương</th>
-                <th rowspan="3">Nội dung/đơn vị kiến thức</th>
-                <th colspan="${QUESTION_TYPES.length * COGNITIVE_LEVELS_DOC.length}">Mức độ đánh giá</th>
-                <th colspan="${COGNITIVE_LEVELS_DOC.length}">Tổng</th>
-                <th rowspan="3">Tỉ lệ % điểm</th>
-            </tr>
-            <tr>
-                ${QUESTION_TYPES.map(type => `<th colspan="${COGNITIVE_LEVELS_DOC.length}">${type}</th>`).join('')}
-                ${COGNITIVE_LEVELS_DOC.map(level => `<th rowspan="2">${level}</th>`).join('')}
-            </tr>
-            <tr>
-                ${QUESTION_TYPES.map(qType => COGNITIVE_LEVELS_DOC.map(level => `<th>${level}</th>`).join('')).join('')}
-            </tr>
-        </thead>
-    `;
-
-    // Table Body
-    htmlContent += `<tbody>`;
-    matrix.forEach((row, index) => {
-        const rowTotalsByLevel = COGNITIVE_LEVELS_DOC.reduce((acc, level) => {
-        acc[level] = QUESTION_TYPES.reduce((sum, qType) => {
-            return sum + (Number(row.counts[qType][level]) || 0);
-        }, 0);
-        return acc;
-        }, {} as Record<CognitiveLevelDoc, number>);
-
-        htmlContent += `
-            <tr>
-                <td>${index + 1}</td>
-                <td class="text-left">${row.topic}</td>
-                <td class="text-left">${row.knowledgeUnit}</td>
-                ${QUESTION_TYPES.map(qType => 
-                    COGNITIVE_LEVELS_DOC.map(level => 
-                        `<td>${row.counts[qType][level] || 0}</td>`
-                    ).join('')
-                ).join('')}
-                ${COGNITIVE_LEVELS_DOC.map(level => 
-                    `<td class="font-bold">${rowTotalsByLevel[level]}</td>`
-                ).join('')}
-                <td>${row.percentage}</td>
-            </tr>
-        `;
-    });
-    htmlContent += `</tbody>`;
-
-    // Table Footer
-    htmlContent += `
-        <tfoot class="font-bold">
-            <tr>
-                <td colspan="3" class="text-left">TỔNG SỐ CÂU</td>
-                ${QUESTION_TYPES.map(qType =>
-                    COGNITIVE_LEVELS_DOC.map(level => 
-                        `<td>${columnTotals[qType][level]}</td>`
-                    ).join('')
-                ).join('')}
-                ${COGNITIVE_LEVELS_DOC.map(level => 
-                    `<td>${grandTotalsByLevel[level]}</td>`
-                ).join('')}
-                <td>${totalQuestions}</td>
-            </tr>
-            <tr>
-                <td colspan="3" class="text-left">TỔNG SỐ ĐIỂM</td>
-                ${QUESTION_TYPES.map(qType =>
-                    COGNITIVE_LEVELS_DOC.map(level => 
-                      `<td>${columnPoints[qType][level].toFixed(2)}</td>`
-                    ).join('')
-                  ).join('')}
-                ${COGNITIVE_LEVELS_DOC.map(level => 
-                    `<td>${grandTotalPointsByLevel[level].toFixed(2)}</td>`
-                ).join('')}
-                <td>${totalPoints.toFixed(2)}</td>
-            </tr>
-            <tr>
-                <td colspan="3" class="text-left">TỈ LỆ %</td>
-                ${QUESTION_TYPES.map(qType =>
-                    COGNITIVE_LEVELS_DOC.map(level => 
-                      `<td>${(columnPoints[qType][level] * 10).toFixed(0)}%</td>`
-                    ).join('')
-                  ).join('')}
-                ${COGNITIVE_LEVELS_DOC.map(level => 
-                    `<td>${(grandTotalPointsByLevel[level] * 10).toFixed(0)}%</td>`
-                ).join('')}
-                <td>${totalPercentage.toFixed(0)}%</td>
-            </tr>
-        </tfoot>
-    `;
-
-    htmlContent += `</table></body></html>`;
-
-    const blob = new Blob(['\ufeff', htmlContent], {
-        type: 'application/msword;charset=utf-8',
-    });
-
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'ma-tran-de-kiem-tra.doc';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
-
+  const modalOutcomeOptions = useMemo(() => getOutcomeOptions(modalData.topic, modalData.knowledgeUnit), [modalData.topic, modalData.knowledgeUnit]);
 
   return (
-    <div className="bg-primary p-6 rounded-xl shadow-lg space-y-6">
-      <h2 className="text-2xl font-bold text-white text-center">Bước 1: Tạo Ma Trận Đề Kiểm Tra</h2>
-      
-      <div className="flex justify-start items-center gap-4">
-        <label htmlFor="class-selector" className="text-lg font-medium text-indigo-200">Lớp:</label>
-        <select
-          id="class-selector"
-          value={selectedClass}
-          onChange={(e) => onClassChange(e.target.value)}
-          className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary transition"
-          aria-label="Chọn lớp học"
-        >
-          <option value="6">6</option>
-          <option value="7">7</option>
-          <option value="8">8</option>
-          <option value="9">9</option>
-        </select>
+    <div className="space-y-8 animate-fade-in">
+      {/* MODAL THÊM NỘI DUNG */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-[2rem] w-full max-w-lg shadow-2xl overflow-hidden transform transition-all flex flex-col max-h-[90vh]">
+            <div className="px-10 py-8 flex justify-between items-center shrink-0">
+               <h3 className="text-2xl font-black text-gray-800">Thêm nội dung vào ma trận</h3>
+               <button onClick={handleCloseModal} className="text-gray-300 hover:text-gray-500 transition">
+                  <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+               </button>
+            </div>
+            
+            <div className="px-10 pb-8 space-y-6 overflow-y-auto custom-scrollbar">
+               <div className="space-y-3">
+                 <label className="text-[13px] font-black text-gray-400 uppercase tracking-widest ml-1">Chủ đề</label>
+                 <select 
+                   className="w-full px-5 py-4 bg-white border border-gray-200 rounded-2xl focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none transition text-sm font-bold text-gray-700 shadow-sm appearance-none cursor-pointer" 
+                   value={modalData.topic} 
+                   onChange={(e) => setModalData({...modalData, topic: e.target.value, knowledgeUnit: '', learningOutcome: ''})}
+                 >
+                   <option value="">Chọn chủ đề...</option>
+                   {topicsForClass.map(t => <option key={t.name} value={t.name}>{t.name}</option>)}
+                 </select>
+               </div>
+               
+               <div className="space-y-3">
+                 <label className="text-[13px] font-black text-gray-400 uppercase tracking-widest ml-1">Nội dung kiến thức</label>
+                 <select 
+                   className="w-full px-5 py-4 bg-white border border-gray-200 rounded-2xl focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none transition text-sm font-bold text-gray-700 shadow-sm disabled:bg-gray-50 disabled:text-gray-400 appearance-none cursor-pointer" 
+                   disabled={!modalData.topic} 
+                   value={modalData.knowledgeUnit} 
+                   onChange={(e) => {
+                      const unit = e.target.value;
+                      setModalData({...modalData, knowledgeUnit: unit, learningOutcome: ''});
+                    }}
+                 >
+                   <option value="">Chọn nội dung...</option>
+                   {topicsForClass.find(t => t.name === modalData.topic)?.knowledgeUnits.map(ku => {
+                     const name = typeof ku === 'string' ? ku : ku.unit;
+                     return <option key={name} value={name}>{name}</option>
+                   })}
+                 </select>
+               </div>
+
+               <div className="space-y-3">
+                 <label className="text-[13px] font-black text-gray-400 uppercase tracking-widest ml-1">Yêu cầu cần đạt</label>
+                 <select 
+                   className="w-full px-5 py-4 bg-white border border-gray-200 rounded-2xl focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none transition text-sm font-bold text-gray-700 shadow-sm disabled:bg-gray-50 disabled:text-gray-400 appearance-none cursor-pointer" 
+                   disabled={!modalData.knowledgeUnit || modalOutcomeOptions.length === 0}
+                   value={modalData.learningOutcome}
+                   onChange={(e) => setModalData({...modalData, learningOutcome: e.target.value})}
+                 >
+                   <option value="">Chọn yêu cầu cần đạt...</option>
+                   {modalOutcomeOptions.map((opt, i) => (
+                      <option key={i} value={opt}>{opt.length > 80 ? opt.substring(0, 80) + '...' : opt}</option>
+                   ))}
+                 </select>
+                 {modalData.learningOutcome && (
+                   <div className="mt-2 p-4 bg-blue-50/50 rounded-xl border border-blue-100 text-xs text-blue-900 leading-relaxed italic">
+                     <MathText text={modalData.learningOutcome} />
+                   </div>
+                 )}
+               </div>
+
+               <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-3">
+                    <label className="text-[13px] font-black text-gray-400 uppercase tracking-widest ml-1">Loại câu hỏi</label>
+                    <select className="w-full px-5 py-4 bg-white border border-gray-200 rounded-2xl focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none transition text-sm font-bold text-gray-700 shadow-sm" value={modalData.qType} onChange={(e) => setModalData({...modalData, qType: e.target.value as QuestionType})}>
+                      {QUESTION_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-3">
+                    <label className="text-[13px] font-black text-gray-400 uppercase tracking-widest ml-1">Mức độ</label>
+                    <select className="w-full px-5 py-4 bg-white border border-gray-200 rounded-2xl focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none transition text-sm font-bold text-gray-700 shadow-sm" value={modalData.level} onChange={(e) => setModalData({...modalData, level: e.target.value as CognitiveLevelDoc})}>
+                      {COGNITIVE_LEVELS_DOC.map(lvl => <option key={lvl} value={lvl}>{lvl}</option>)}
+                    </select>
+                  </div>
+               </div>
+
+               <div className="grid grid-cols-2 gap-6 pt-2">
+                  <div className="space-y-3">
+                    <label className="text-[13px] font-black text-gray-400 uppercase tracking-widest ml-1">Số câu</label>
+                    <input type="number" min="1" className="w-full px-5 py-4 bg-white border border-gray-200 rounded-2xl focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none transition text-base font-black text-primary shadow-sm" value={modalData.count} onChange={(e) => setModalData({...modalData, count: parseInt(e.target.value) || 0})} />
+                  </div>
+                  <div className="space-y-3">
+                    <label className="text-[13px] font-black text-gray-400 uppercase tracking-widest ml-1">Điểm/câu</label>
+                    <div className="w-full px-5 py-4 bg-blue-50 text-primary font-black rounded-2xl border border-blue-100 flex items-center justify-center text-lg">{QUESTION_TYPE_POINTS[modalData.qType].toFixed(2)}đ</div>
+                  </div>
+               </div>
+            </div>
+
+            <div className="px-10 py-8 bg-gray-50/50 flex gap-6 shrink-0">
+               <button onClick={handleCloseModal} className="flex-1 py-4 px-6 bg-white border-2 border-gray-100 text-gray-600 font-black rounded-2xl hover:bg-gray-100 transition shadow-sm text-sm uppercase tracking-wider">Hủy bỏ</button>
+               <button onClick={handleSaveModal} disabled={!modalData.topic || !modalData.knowledgeUnit || modalData.count < 1 || !modalData.learningOutcome} className="flex-1 py-4 px-6 bg-primary text-white font-black rounded-2xl hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition shadow-xl shadow-primary/20 text-sm uppercase tracking-wider">Thêm vào bảng</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="flex flex-col md:flex-row justify-between items-end gap-4 border-b border-gray-100 pb-4">
+        <h2 className="text-3xl font-black text-primary tracking-tight uppercase">Thiết kế ma trận, đặc tả</h2>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200 border border-gray-300 text-sm">
-          <thead className="text-center align-middle">
-            <tr>
-              <th rowSpan={3} className="px-2 py-3 text-sm font-extrabold text-white bg-primary uppercase tracking-wider border border-gray-300">STT</th>
-              <th rowSpan={3} className="px-2 py-3 text-sm font-extrabold text-white bg-primary uppercase tracking-wider border border-gray-300" style={{ minWidth: '180px' }}>Chủ đề/Chương</th>
-              <th rowSpan={3} className="px-2 py-3 text-sm font-extrabold text-white bg-primary uppercase tracking-wider border border-gray-300" style={{ minWidth: '200px' }}>Nội dung/đơn vị kiến thức</th>
-              <th colSpan={12} className="px-2 py-3 text-sm font-extrabold text-white bg-primary uppercase tracking-wider border border-gray-300">Mức độ đánh giá</th>
-              <th colSpan={3} className="px-2 py-3 text-sm font-extrabold text-white bg-primary uppercase tracking-wider border border-gray-300">Tổng</th>
-              <th rowSpan={3} className="px-2 py-3 text-sm font-extrabold text-white bg-primary uppercase tracking-wider border border-gray-300" style={{ minWidth: '80px' }}>Tỉ lệ % điểm</th>
-              <th rowSpan={3} className="w-12 border border-gray-300 bg-primary"></th>
-            </tr>
-            <tr>
-              {QUESTION_TYPES.map(type => (
-                <th key={type} colSpan={3} className="px-2 py-2 text-sm font-extrabold text-white bg-primary uppercase tracking-wider border border-gray-300">{type}</th>
-              ))}
-              {COGNITIVE_LEVELS_DOC.map(level => (
-                <th key={level} rowSpan={2} className="px-2 py-2 text-sm font-extrabold text-white bg-primary uppercase tracking-wider border border-gray-300">{level}</th>
-              ))}
-            </tr>
-            <tr>
-              {QUESTION_TYPES.map(qType => 
-                COGNITIVE_LEVELS_DOC.map(level => (
-                  <th key={`${qType}-${level}`} className="px-2 py-2 text-sm font-extrabold text-white bg-primary uppercase tracking-wider border border-gray-300">{level}</th>
-                ))
-              )}
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {matrix.map((row, index) => {
-              const rowTotalsByLevel = COGNITIVE_LEVELS_DOC.reduce((acc, level) => {
-                acc[level] = QUESTION_TYPES.reduce((sum, qType) => {
-                    return sum + (Number(row.counts[qType][level]) || 0);
-                }, 0);
-                return acc;
-              }, {} as Record<CognitiveLevelDoc, number>);
-
-              const selectedTopicData = topicsForClass.find(t => t.name === row.topic);
-              const knowledgeUnitsForTopic = selectedTopicData ? selectedTopicData.knowledgeUnits : [];
-
-              return (
-              <tr key={row.id}>
-                <td className="px-2 py-2 border border-gray-300 text-center">{index + 1}</td>
-                <td className="p-0 border border-gray-300">
-                   <select
-                    value={row.topic}
-                    onChange={(e) => handleUpdate(row.id, 'topic', e.target.value)}
-                    className="w-full h-full px-2 py-2 bg-white border-0 rounded-none focus:ring-2 focus:ring-inset focus:ring-primary"
-                  >
-                    <option value="" disabled>-- Chọn chủ đề/chương --</option>
-                    {topicsForClass.map(topic => (
-                      <option key={topic.name} value={topic.name}>{topic.name}</option>
-                    ))}
-                  </select>
-                </td>
-                <td className="p-0 border border-gray-300">
-                  <select
-                    value={row.knowledgeUnit}
-                    onChange={(e) => handleUpdate(row.id, 'knowledgeUnit', e.target.value)}
-                    disabled={!row.topic || knowledgeUnitsForTopic.length === 0}
-                    className="w-full h-full px-2 py-2 bg-white border-0 rounded-none focus:ring-2 focus:ring-inset focus:ring-primary disabled:bg-gray-100"
-                  >
-                    <option value="" disabled>-- Chọn nội dung --</option>
-                    {knowledgeUnitsForTopic.map(unit => (
-                      <option key={unit} value={unit}>{unit}</option>
-                    ))}
-                  </select>
-                </td>
-                {QUESTION_TYPES.map(qType => 
-                  COGNITIVE_LEVELS_DOC.map(level => (
-                    <td key={`${qType}-${level}`} className="p-0 border border-gray-300">
-                      <input
-                        type="number"
-                        min="0"
-                        value={row.counts[qType][level]}
-                        onChange={(e) => handleUpdate(row.id, 'count', parseInt(e.target.value, 10) || 0, qType, level)}
-                        className="w-full h-full p-2 text-center bg-transparent border-0 rounded-none focus:ring-2 focus:ring-inset focus:ring-primary"
-                      />
-                    </td>
-                  ))
-                )}
-                {COGNITIVE_LEVELS_DOC.map(level => (
-                  <td key={level} className="px-2 py-2 border border-gray-300 text-center font-bold text-text-accent">
-                    {rowTotalsByLevel[level]}
-                  </td>
-                ))}
-                <td className="px-2 py-2 border border-gray-300 text-center bg-gray-50 font-medium text-text-main align-middle">
-                  {row.percentage}
-                </td>
-                <td className="px-2 py-2 text-center border border-gray-300">
-                   <button onClick={() => handleRemoveRow(row.id)} className="text-red-500 hover:text-red-700 disabled:opacity-50" disabled={matrix.length <= 1}>
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </button>
-                </td>
+      <div className="rounded-[2rem] border border-gray-200 overflow-hidden shadow-2xl shadow-blue-900/5 bg-white">
+        <div className="overflow-x-auto custom-scrollbar-h">
+          <table className="w-full bold-grid bg-white text-center align-middle">
+            <thead>
+              <tr className="bg-primary text-white">
+                <th rowSpan={3} className="px-1 py-6 text-[11px] font-black uppercase w-12">TT</th>
+                <th rowSpan={3} className="px-3 py-6 text-[11px] font-black uppercase w-[240px] text-center">Chủ đề/Chương</th>
+                <th rowSpan={3} className="px-3 py-6 text-[11px] font-black uppercase w-[240px] text-center">Nội dung kiến thức</th>
+                <th rowSpan={3} className="px-3 py-6 text-[11px] font-black uppercase w-[360px] text-center">Yêu cầu cần đạt</th>
+                <th colSpan={12} className="px-2 py-4 text-[11px] font-black uppercase tracking-tighter">Mức độ đánh giá</th>
+                <th rowSpan={3} className="px-2 py-6 text-[11px] font-black uppercase w-20">Tổng</th>
+                <th rowSpan={3} className="px-2 py-6 text-[11px] font-black uppercase w-20">Tỷ lệ %</th>
+                <th rowSpan={3} className="px-2 py-6 text-[11px] font-black uppercase w-12">Gỡ</th>
               </tr>
-            )})}
-          </tbody>
-          <tfoot className="bg-gray-100 font-bold">
-            <tr>
-              <td colSpan={3} className="px-2 py-2 border border-gray-300 text-left">TỔNG SỐ CÂU</td>
-              {QUESTION_TYPES.map(qType =>
-                COGNITIVE_LEVELS_DOC.map(level => (
-                  <td key={`${qType}-${level}-total`} className="px-2 py-2 border border-gray-300 text-center">
-                    {columnTotals[qType][level]}
+              <tr className="bg-primary/95 text-white">
+                <th colSpan={9} className="px-2 py-2 text-[10px] font-bold uppercase tracking-widest">TNKQ</th>
+                <th colSpan={3} className="px-2 py-2 text-[10px] font-bold uppercase tracking-widest">Tự luận</th>
+              </tr>
+              <tr className="bg-primary/90 text-white text-[9px] uppercase">
+                <th colSpan={3} className="py-2">Nhiều lựa chọn</th>
+                <th colSpan={3} className="py-2">"Đúng - Sai"</th>
+                <th colSpan={3} className="py-2">Trả lời ngắn</th>
+                <th colSpan={3} className="py-2">Tự luận</th>
+              </tr>
+              <tr className="bg-gray-50 text-gray-500 text-[8px] uppercase font-black">
+                 <th colSpan={4} className="border-none"></th>
+                 {QUESTION_TYPES.map(qType => COGNITIVE_LEVELS_DOC.map(level => (
+                   <th key={`${qType}-${level}-sub`} className="px-1 py-3 font-black min-w-[36px]">{level}</th>
+                 )))}
+                 <th colSpan={3} className="border-none"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {matrix.length === 0 ? (
+                <tr>
+                  <td colSpan={19} className="py-32 text-gray-300 italic text-sm text-center">
+                    Chưa có nội dung nào trong ma trận. Hãy nhấn "Thêm mới" để bắt đầu thiết kế.
                   </td>
-                ))
+                </tr>
+              ) : (
+                matrix.map((row, index) => {
+                  const rowTotalPoints = QUESTION_TYPES.reduce((sum: number, qType) => sum + COGNITIVE_LEVELS_DOC.reduce((lsum: number, level) => lsum + ((Number(row.counts[qType][level]) || 0) * QUESTION_TYPE_POINTS[qType]), 0), 0);
+                  return (
+                    <tr key={row.id} className="hover:bg-blue-50/30 transition-colors">
+                      <td className="px-1 py-5 text-center text-xs font-bold text-gray-400">{index + 1}</td>
+                      <td className="px-3 py-5 text-xs font-bold text-slate-700 text-left leading-snug">
+                        {row.topic}
+                      </td>
+                      <td className="px-3 py-5 text-[11px] text-gray-600 text-left leading-relaxed">
+                        {row.knowledgeUnit}
+                      </td>
+                      <td className="px-3 py-5 text-[11px] text-gray-600 text-left leading-relaxed italic opacity-80">
+                        <MathText text={row.learningOutcome || ''} />
+                      </td>
+                      {QUESTION_TYPES.map(qType => 
+                        COGNITIVE_LEVELS_DOC.map(level => {
+                          const count = Number(row.counts[qType][level]) || 0;
+                          return (
+                            <td key={`${qType}-${level}`} className={`px-0 py-0 text-center ${count > 0 ? 'bg-primary/5' : ''}`}>
+                              <input type="number" min="0" className="w-full h-full bg-transparent text-center text-xs py-5 outline-none font-black text-primary focus:bg-primary/10 transition" value={count || ''} onChange={(e) => handleCountChange(row.id, qType, level, parseInt(e.target.value) || 0)} />
+                            </td>
+                          );
+                        })
+                      )}
+                      <td className="px-1 py-5 text-center font-black text-primary text-xs bg-gray-50/50">
+                        {rowTotalPoints > 0 ? rowTotalPoints.toFixed(2) : ''}
+                      </td>
+                      <td className="px-1 py-5 text-center font-bold text-gray-400 text-[10px]">
+                        {row.percentage > 0 ? `${row.percentage}%` : ''}
+                      </td>
+                      <td className="px-1 py-5 text-center">
+                        <button onClick={() => handleRemoveRow(row.id)} className="text-gray-300 hover:text-red-500 transition-all p-2 rounded-full hover:bg-red-50">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mx-auto" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1-1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })
               )}
-              {COGNITIVE_LEVELS_DOC.map(level => (
-                <td key={`${level}-grandtotal`} className="px-2 py-2 border border-gray-300 text-center">
-                  {grandTotalsByLevel[level]}
-                </td>
-              ))}
-              <td className="px-2 py-2 border border-gray-300 text-center">
-                {totalQuestions}
-              </td>
-              <td className="border border-gray-300"></td>
-            </tr>
-            <tr>
-              <td colSpan={3} className="px-2 py-2 border border-gray-300 text-left">TỔNG SỐ ĐIỂM</td>
-              {QUESTION_TYPES.map(qType =>
-                COGNITIVE_LEVELS_DOC.map(level => (
-                  <td key={`${qType}-${level}-points`} className="px-2 py-2 border border-gray-300 text-center">
-                    {columnPoints[qType][level].toFixed(2)}
-                  </td>
-                ))
-              )}
-              {COGNITIVE_LEVELS_DOC.map(level => (
-                <td key={`${level}-grandtotal-points`} className="px-2 py-2 border border-gray-300 text-center">
-                  {grandTotalPointsByLevel[level].toFixed(2)}
-                </td>
-              ))}
-              <td className="px-2 py-2 border border-gray-300 text-center">
-                {totalPoints.toFixed(2)}
-              </td>
-              <td className="border border-gray-300"></td>
-            </tr>
-            <tr>
-              <td colSpan={3} className="px-2 py-2 border border-gray-300 text-left">TỈ LỆ %</td>
-              {QUESTION_TYPES.map(qType =>
-                COGNITIVE_LEVELS_DOC.map(level => (
-                  <td key={`${qType}-${level}-percent`} className="px-2 py-2 border border-gray-300 text-center">
-                    {(columnPoints[qType][level] * 10).toFixed(0)}%
-                  </td>
-                ))
-              )}
-              {COGNITIVE_LEVELS_DOC.map(level => (
-                <td key={`${level}-grandtotal-percent`} className="px-2 py-2 border border-gray-300 text-center">
-                  {(grandTotalPointsByLevel[level] * 10).toFixed(0)}%
-                </td>
-              ))}
-              <td className={`px-2 py-2 border border-gray-300 text-center ${totalPercentage.toFixed(0) === '100' ? 'text-green-700' : 'text-red-700'}`}>
-                {totalPercentage.toFixed(0)}%
-              </td>
-              <td className="border border-gray-300"></td>
-            </tr>
-          </tfoot>
-        </table>
+            </tbody>
+          </table>
+        </div>
       </div>
-      <button onClick={handleAddRow} className="text-sm font-medium text-indigo-300 hover:text-white">+ Thêm chủ đề/chương</button>
-      
-      <div className="border-t border-indigo-500 pt-6 space-y-6">
-        <div>
-          <h3 className="text-lg font-extrabold text-white mb-4">Kiểm tra số lượng câu hỏi:</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {QUESTION_TYPES.map(qType => {
-              const current = totalsByQuestionType[qType];
-              const target = QUESTION_TYPE_TARGETS[qType];
-              const isMet = current === target;
-              return (
-                <div key={qType} className={`p-3 rounded-lg border transition-all ${isMet ? 'border-green-400 bg-green-500/10' : 'border-red-400 bg-red-500/10'}`}>
-                  <p className="font-semibold text-indigo-100">{qType}</p>
-                  <p className={`text-base font-bold ${isMet ? 'text-green-400' : 'text-red-400'}`}>{current} / {target}</p>
-                  {!isMet && <p className="text-xs font-medium text-red-300">{current > target ? `Thừa ${current - target} câu` : `Thiếu ${target - current} câu`}</p>}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-        <div>
-          <h3 className="text-lg font-extrabold text-white mb-4">Kiểm tra số điểm:</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {QUESTION_TYPES.map(qType => {
-              const currentPoints = totalsByQuestionType[qType] * QUESTION_TYPE_POINTS[qType];
-              const targetPoints = QUESTION_TYPE_TARGETS[qType] * QUESTION_TYPE_POINTS[qType];
-              const isMet = Math.abs(currentPoints - targetPoints) < 0.01;
-              const diff = Math.abs(currentPoints - targetPoints);
 
-              return (
-                <div key={qType} className={`p-3 rounded-lg border transition-all ${isMet ? 'border-green-400 bg-green-500/10' : 'border-red-400 bg-red-500/10'}`}>
-                  <p className="font-semibold text-indigo-100">{qType}</p>
-                  <p className={`text-base font-bold ${isMet ? 'text-green-400' : 'text-red-400'}`}>{currentPoints.toFixed(2)} / {targetPoints.toFixed(2)}</p>
-                  {!isMet && <p className="text-xs font-medium text-red-300">{currentPoints > targetPoints ? `Thừa ${diff.toFixed(2)} điểm` : `Thiếu ${diff.toFixed(2)} điểm`}</p>}
-                </div>
-              );
-            })}
-          </div>
+      <div className="flex flex-col md:flex-row justify-between items-center gap-6 mt-10">
+        <div className="text-gray-400 text-sm font-bold flex items-center gap-2">
+           <svg className="w-5 h-5 text-orange-400" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" /></svg>
+           Nhập số lượng câu hỏi trực tiếp vào bảng hoặc nhấn "Thêm mới"
         </div>
-        <div>
-          <h3 className="text-lg font-extrabold text-white mb-4">Kiểm tra số điểm mỗi mức độ:</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {COGNITIVE_LEVELS_DOC.map(level => {
-                const currentPoints = grandTotalPointsByLevel[level];
-                const targetPoints = COGNITIVE_LEVEL_TARGET_POINTS[level];
-                const isMet = Math.abs(currentPoints - targetPoints) < 0.01;
-                const diff = Math.abs(currentPoints - targetPoints);
-
-                return (
-                    <div key={level} className={`p-3 rounded-lg border transition-all ${isMet ? 'border-green-400 bg-green-500/10' : 'border-red-400 bg-red-500/10'}`}>
-                        <p className="font-semibold text-indigo-100">{level}</p>
-                        <p className={`text-base font-bold ${isMet ? 'text-green-400' : 'text-red-400'}`}>{currentPoints.toFixed(2)} / {targetPoints.toFixed(2)}</p>
-                        {!isMet && <p className="text-xs font-medium text-red-300">{currentPoints > targetPoints ? `Thừa ${diff.toFixed(2)} điểm` : `Thiếu ${diff.toFixed(2)} điểm`}</p>}
-                    </div>
-                );
-            })}
-          </div>
-        </div>
-        <div className="pt-4 flex justify-end items-center flex-wrap gap-4">
-          <button
-            onClick={handleCopyMarkdown}
-            className="bg-gray-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 disabled:opacity-50"
-          >
-            {copyButtonText}
-          </button>
-          <button
-            onClick={handleDownloadMatrixWord}
-            className="bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-            aria-label="Tải ma trận về dưới dạng Word"
-          >
-            Tải Ma Trận (Word)
-          </button>
-          <button
-            onClick={onSubmit}
-            disabled={!isSubmittable || isLoading}
-            className="bg-secondary text-white font-bold py-3 px-6 rounded-lg hover:brightness-90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-secondary disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isLoading ? 'Đang xử lý...' : 'Tạo Bảng Đặc Tả'}
+        <div className="flex gap-4">
+          <button onClick={handleOpenModal} className="px-10 py-4 bg-white border-2 border-primary text-primary font-black rounded-2xl hover:bg-primary hover:text-white transition-all shadow-xl shadow-primary/5 flex items-center gap-2 group text-sm uppercase tracking-widest">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M12 4v16m8-8H4" /></svg>
+            Thêm mới nội dung
           </button>
         </div>
       </div>
+
+      <button 
+        onClick={onSubmit}
+        disabled={!isSubmittable || isLoading}
+        className={`w-full mt-10 bg-primary hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-white font-black py-7 rounded-[2.5rem] shadow-2xl transition-all flex items-center justify-center gap-5 text-xl uppercase tracking-[0.15em] group shimmer-btn ${isSubmittable && !isLoading ? 'animate-float' : ''}`}
+      >
+        {isLoading ? (
+          <>
+            <svg className="w-8 h-8 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Đang tạo đề kiểm tra...
+          </>
+        ) : (
+          <>
+            <svg className="w-8 h-8 transition-transform group-hover:scale-125 group-hover:rotate-12" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M13 10V3L4 14H11V21L20 10H13Z" />
+            </svg>
+            Tạo Đề Kiểm Tra
+            <svg className="w-7 h-7 transform transition-transform group-hover:translate-x-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M13 5l7 7-7 7" />
+            </svg>
+          </>
+        )}
+      </button>
     </div>
   );
 };

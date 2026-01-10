@@ -1,43 +1,29 @@
+
 import React, { useState, useCallback } from 'react';
 import { QuizMatrix, MatrixRow, QuizSpecification, QuizQuestion, QUESTION_TYPES, COGNITIVE_LEVELS_DOC, LevelCountsDoc, QuestionType } from '../types';
 import { generateSpecification, generateQuizFromSpec } from '../services/geminiService';
 import Stepper from './Stepper';
+import GeneralInfoForm from './GeneralInfoForm';
 import MatrixCreator from './MatrixCreator';
-import SpecificationDisplay from './SpecificationDisplay';
 import QuizDisplay from './QuizDisplay';
 
-const STEPS = ['Tạo Ma Trận', 'Bảng Đặc Tả', 'Tạo Đề'];
-
-const createInitialCounts = (): Record<QuestionType, LevelCountsDoc> => {
-  return QUESTION_TYPES.reduce((acc, type) => {
-    acc[type] = COGNITIVE_LEVELS_DOC.reduce((levelAcc, level) => {
-      levelAcc[level] = 0;
-      return levelAcc;
-    }, {} as LevelCountsDoc);
-    return acc;
-  }, {} as Record<QuestionType, LevelCountsDoc>);
-};
-
-const createInitialMatrixRow = (): MatrixRow => ({
-  id: new Date().toISOString(),
-  topic: '',
-  knowledgeUnit: '',
-  percentage: 0,
-  counts: createInitialCounts()
-});
-
+const STEPS = ['Thông tin chung', 'THIẾT KẾ MA TRẬN, ĐẶC TẢ', 'Đề kiểm tra'];
 
 const MatrixWorkflow: React.FC = () => {
   const [currentStep, setCurrentStep] = useState(1);
-  const [matrix, setMatrix] = useState<QuizMatrix>([createInitialMatrixRow()]);
+  const [matrix, setMatrix] = useState<QuizMatrix>([]);
   const [specification, setSpecification] = useState<QuizSpecification>([]);
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // States cho Thông tin chung
   const [selectedClass, setSelectedClass] = useState<string>('6');
+  const [selectedSubject, setSelectedSubject] = useState<string>('Toán');
+  const [quizTitle, setQuizTitle] = useState<string>('Kiểm tra giữa kỳ I');
+  const [quizDuration, setQuizDuration] = useState<string>('90');
 
-
-  const handleGenerateSpec = useCallback(async () => {
+  const handleGenerateFullQuiz = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
@@ -49,62 +35,93 @@ const MatrixWorkflow: React.FC = () => {
       });
 
       if (nonEmptyRows.length === 0) {
-        throw new Error("Ma trận không hợp lệ. Vui lòng nhập chủ đề, nội dung và ít nhất một câu hỏi.");
+        throw new Error("Ma trận không hợp lệ. Vui lòng thêm ít nhất một nội dung và câu hỏi.");
       }
-      const spec = await generateSpecification(nonEmptyRows, selectedClass);
-      setSpecification(spec);
-      setCurrentStep(2);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Đã có lỗi xảy ra khi tạo bảng đặc tả.");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [matrix, selectedClass]);
 
-  const handleGenerateQuiz = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const generatedQuestions = await generateQuizFromSpec(specification, selectedClass);
+      // Bước 1 ngầm: Tạo đặc tả
+      const spec = await generateSpecification(nonEmptyRows, selectedClass, selectedSubject);
+      setSpecification(spec);
+      
+      // Bước 2: Tạo đề từ đặc tả vừa tạo
+      const generatedQuestions = await generateQuizFromSpec(spec, selectedClass, selectedSubject);
       setQuestions(generatedQuestions);
-      setCurrentStep(3);
+      
+      setCurrentStep(3); // Chuyển đến bước Xem đề (bước 3 trong 3 bước)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Đã có lỗi xảy ra khi tạo đề kiểm tra.");
+      setError(err instanceof Error ? err.message : "Đã có lỗi xảy ra trong quá trình tạo đề.");
     } finally {
       setIsLoading(false);
     }
-  }, [specification, selectedClass]);
-  
-  const handleStartOver = () => {
-    setCurrentStep(1);
-    setMatrix([createInitialMatrixRow()]);
-    setSpecification([]);
-    setQuestions([]);
-    setError(null);
-    setSelectedClass('6');
-  }
+  }, [matrix, selectedClass, selectedSubject]);
+
+  const handleStepClick = (stepIndex: number) => {
+    // Chỉ cho phép chuyển sang bước xem đề nếu đã có câu hỏi
+    if (stepIndex === 3 && questions.length === 0) return;
+    setCurrentStep(stepIndex);
+  };
 
   const handleClassChange = (newClass: string) => {
     setSelectedClass(newClass);
-    // Đặt lại ma trận về trạng thái ban đầu để phù hợp với chương trình học mới
-    setMatrix([createInitialMatrixRow()]);
+    setMatrix([]);
+    setQuestions([]);
+    setSpecification([]);
+  };
+
+  const handleSubjectChange = (newSubject: string) => {
+    setSelectedSubject(newSubject);
+    setMatrix([]);
+    setQuestions([]);
+    setSpecification([]);
   };
 
   const renderCurrentStep = () => {
     switch (currentStep) {
       case 1:
-        return <MatrixCreator 
-                  matrix={matrix} 
-                  setMatrix={setMatrix} 
-                  onSubmit={handleGenerateSpec} 
-                  isLoading={isLoading} 
-                  selectedClass={selectedClass}
-                  onClassChange={handleClassChange}
-                />;
+        return (
+          <GeneralInfoForm 
+            subject={selectedSubject}
+            grade={selectedClass}
+            title={quizTitle}
+            duration={quizDuration}
+            onSubjectChange={handleSubjectChange}
+            onGradeChange={handleClassChange}
+            onTitleChange={setQuizTitle}
+            onDurationChange={setQuizDuration}
+            onNext={() => setCurrentStep(2)}
+          />
+        );
       case 2:
-        return <SpecificationDisplay specification={specification} matrix={matrix} onBack={() => setCurrentStep(1)} onSubmit={handleGenerateQuiz} isLoading={isLoading} />;
+        return (
+          <MatrixCreator 
+            matrix={matrix} 
+            setMatrix={setMatrix} 
+            onSubmit={handleGenerateFullQuiz} 
+            isLoading={isLoading} 
+            selectedClass={selectedClass}
+            onClassChange={handleClassChange}
+            selectedSubject={selectedSubject}
+            onSubjectChange={handleSubjectChange}
+            hasGeneratedQuiz={questions.length > 0}
+            onReturnToQuiz={() => setCurrentStep(3)}
+          />
+        );
       case 3:
-        return <QuizDisplay questions={questions} onStartOver={handleStartOver} />;
+        return (
+          <QuizDisplay 
+            questions={questions} 
+            matrix={matrix}
+            specification={specification}
+            onBack={() => setCurrentStep(2)} 
+            onStartOver={handleGenerateFullQuiz} 
+            isLoading={isLoading} 
+            initialInfo={{
+              title: quizTitle,
+              subject: selectedSubject,
+              duration: quizDuration,
+              grade: selectedClass
+            }}
+          />
+        );
       default:
         return null;
     }
@@ -112,7 +129,11 @@ const MatrixWorkflow: React.FC = () => {
 
   return (
     <div className="space-y-8">
-      <Stepper currentStep={currentStep} steps={STEPS} />
+      <Stepper 
+        currentStep={currentStep} 
+        steps={STEPS} 
+        onStepClick={handleStepClick}
+      />
        {error && (
             <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg relative" role="alert">
               <strong className="font-bold">Lỗi!</strong>

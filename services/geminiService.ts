@@ -1,15 +1,10 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { QuizQuestion, QuizMatrix, QuizSpecification, SpecificationItem } from '../types';
 
-if (!process.env.API_KEY) {
-  throw new Error("Biến môi trường API_KEY chưa được đặt");
-}
-
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
 const parseJsonResponse = <T>(jsonText: string): T => {
   try {
-    const data = JSON.parse(jsonText);
+    const data = JSON.parse(jsonText.replace(/```json|```/g, '').trim());
     return data as T;
   } catch (error) {
     console.error("Lỗi khi phân tích JSON:", jsonText, error);
@@ -17,26 +12,28 @@ const parseJsonResponse = <T>(jsonText: string): T => {
   }
 };
 
-export const generateSpecification = async (matrix: QuizMatrix, selectedClass: string): Promise<QuizSpecification> => {
+export const generateSpecification = async (matrix: QuizMatrix, selectedClass: string, selectedSubject: string): Promise<QuizSpecification> => {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) throw new Error("API Key chưa được cấu hình.");
+  
+  const ai = new GoogleGenAI({ apiKey });
   const matrixString = JSON.stringify(matrix, null, 2);
   const prompt = `
-    Bạn là một chuyên gia về khảo thí giáo dục Việt Nam. Dựa vào ma trận kiến thức cho một bài kiểm tra Toán lớp ${selectedClass} theo định dạng của Công văn 7991 BGDĐT sau đây, hãy tạo ra một bảng đặc tả chi tiết. Ma trận này bao gồm 'topic' (Chủ đề/Chương), 'knowledgeUnit' (Nội dung/đơn vị kiến thức), và 'percentage' (tỉ lệ phần trăm điểm). Hãy sử dụng tất cả thông tin này để tạo ra các "Yêu cầu cần đạt" phù hợp.
-    Ma trận:
+    Bạn là chuyên gia khảo thí. Hãy chuyển ma trận sau thành bảng đặc tả chi tiết cho môn ${selectedSubject} lớp ${selectedClass}:
     ${matrixString}
 
-    Yêu cầu:
-    1. Với mỗi ô trong ma trận có số lượng câu hỏi lớn hơn 0, hãy tạo ra một hoặc nhiều "Yêu cầu cần đạt" tương ứng.
-    2. Mỗi "Yêu cầu cần đạt" là một mô tả rõ ràng về kiến thức, kỹ năng mà học sinh cần thể hiện, phù hợp với lớp ${selectedClass}.
-    3. Mỗi đối tượng trong mảng kết quả phải tương ứng với một "Yêu cầu cần đạt" và phải bao gồm 'chuDe' (lấy từ 'topic'), 'noiDung' (lấy từ 'knowledgeUnit'), 'loaiCauHoi', và 'mucDo'.
-    4. Giữ nguyên tên các thuộc tính trong schema.
-    5. Trả về kết quả dưới dạng một mảng JSON hợp lệ tuân thủ schema đã cho.
+    YÊU CẦU:
+    1. LaTeX cho ký hiệu toán ($x, y, \pi$,...).
+    2. Xuất JSON mảng các đối tượng SpecificationItem.
+    3. Giữ nguyên các nội dung kiến thức từ ma trận.
   `;
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3-flash-preview",
       contents: prompt,
       config: {
+        thinkingConfig: { thinkingBudget: 0 },
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.ARRAY,
@@ -55,54 +52,184 @@ export const generateSpecification = async (matrix: QuizMatrix, selectedClass: s
         }
       }
     });
-    const jsonText = response.text.trim();
-    return parseJsonResponse<SpecificationItem[]>(jsonText);
+    return parseJsonResponse<SpecificationItem[]>(response.text.trim());
   } catch (error) {
     console.error("Lỗi khi tạo bảng đặc tả:", error);
-    throw new Error("Không thể tạo bảng đặc tả. Vui lòng kiểm tra lại ma trận.");
+    throw error;
   }
 };
 
-export const generateQuizFromSpec = async (specification: QuizSpecification, selectedClass: string): Promise<QuizQuestion[]> => {
+export const generateQuizFromSpec = async (specification: QuizSpecification, selectedClass: string, selectedSubject: string): Promise<QuizQuestion[]> => {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) throw new Error("API Key chưa được cấu hình.");
+
+  const ai = new GoogleGenAI({ apiKey });
   const specString = JSON.stringify(specification, null, 2);
   const prompt = `
-    Bạn là một giáo viên toán nhiều kinh nghiệm. Dựa vào bảng đặc tả chi tiết theo định dạng của Bộ GDĐT Việt Nam sau đây, hãy soạn một đề kiểm tra toán học hoàn chỉnh cho học sinh lớp ${selectedClass}. Bảng đặc tả này có 'chuDe' (chủ đề/chương chính), 'noiDung' (nội dung cụ thể), và 'yeuCauCanDat'. Hãy đảm bảo câu hỏi phù hợp với cả ba cấp độ thông tin này.
-    Bảng đặc tả:
+    Soạn đề kiểm tra ${selectedSubject} lớp ${selectedClass} theo đặc tả:
     ${specString}
 
-    Yêu cầu:
-    1. Soạn các câu hỏi tuân thủ nghiêm ngặt theo "Yêu cầu cần đạt", "loại câu hỏi", "mức độ", và "số lượng" đã được chỉ định cho từng mục trong bảng đặc tả.
-    2. Mỗi câu hỏi phải có 'cauHoi' (nội dung câu hỏi) và 'dapAn' (đáp án chính xác).
-    3. **QUY TẮC ĐỊNH DẠNG cho từng loại câu hỏi:**
-       - **"Nhiều lựa chọn":** Mỗi câu hỏi phải có 4 lựa chọn được đánh dấu A, B, C, D. Trong đó chỉ có một đáp án đúng. Nội dung 'cauHoi' phải bao gồm cả câu hỏi và 4 lựa chọn này. 'dapAn' chỉ ghi chữ cái của đáp án đúng (ví dụ: "A" hoặc "C").
-       - **"Đúng - Sai":** Mỗi một câu hỏi "Đúng - Sai" phải bao gồm một câu dẫn chung và chính xác 4 phát biểu nhỏ (đánh dấu là a, b, c, d). Mỗi phát biểu nhỏ này tương đương 0.25 điểm. Sau mỗi phát biểu nhỏ, hãy thêm dấu ba chấm "..." để học sinh điền 'Đ' (Đúng) hoặc 'S' (Sai). Ví dụ về định dạng 'cauHoi': "Cho tam giác ABC vuông tại A. Các phát biểu sau đúng hay sai?\\na. Cạnh huyền là cạnh lớn nhất. ...\\nb. Góc B và góc C phụ nhau. ...\\nc. sin(B) = cos(C). ...\\nd. AB^2 + BC^2 = AC^2. ...". 'dapAn' cho câu "Đúng - Sai" phải liệt kê đáp án cho cả 4 phát biểu. Ví dụ: "a - Đ, b - Đ, c - Đ, d - S".
-    4. Đảm bảo tổng số câu hỏi được tạo ra khớp với tổng số lượng yêu cầu trong bảng đặc tả.
-    5. Trả về kết quả dưới dạng một mảng JSON hợp lệ tuân thủ schema đã cho.
+    QUY TẮC:
+    1. Lời giải chi tiết step-by-step trong 'huongDanChamDiem'.
+    2. LaTeX chuẩn ($ cho inline, $$ cho block). Số thập phân dùng dấu phẩy.
+    3. Điền Metadata chính xác theo đặc tả.
+    4. Nếu câu hỏi có hình vẽ minh họa (đặc biệt là hình học), hãy cung cấp mã JavaScript để vẽ hình đó lên HTML5 Canvas 2D vào trường 'drawingCode'. 
+       Mã vẽ phải sạch, nhận biến 'ctx' (2D context) và 'canvas'. Canvas mặc định 500x300. Hãy vẽ căn giữa, rõ nét, có ký hiệu đỉnh/góc nếu cần.
+    5. Trả về mảng JSON QuizQuestion.
   `;
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3-flash-preview",
       contents: prompt,
       config: {
+        thinkingConfig: { thinkingBudget: 1500 },
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.ARRAY,
           items: {
             type: Type.OBJECT,
             properties: {
+              id: { type: Type.STRING },
               cauHoi: { type: Type.STRING },
               dapAn: { type: Type.STRING },
+              loaiCauHoi: { type: Type.STRING },
+              huongDanChamDiem: { type: Type.STRING },
+              drawingCode: { type: Type.STRING, description: "Mã JS vẽ hình Canvas 2D" },
+              metadata: {
+                type: Type.OBJECT,
+                properties: {
+                  chuDe: { type: Type.STRING },
+                  noiDung: { type: Type.STRING },
+                  yeuCauCanDat: { type: Type.STRING },
+                  mucDo: { type: Type.STRING },
+                }
+              }
             },
-            required: ["cauHoi", "dapAn"],
+            required: ["cauHoi", "dapAn", "loaiCauHoi", "huongDanChamDiem"],
           }
         }
       }
     });
-    const jsonText = response.text.trim();
-    return parseJsonResponse<QuizQuestion[]>(jsonText);
+    const qs = parseJsonResponse<QuizQuestion[]>(response.text.trim());
+    return qs.map(q => ({ ...q, id: q.id || Math.random().toString(36).substr(2, 9) }));
   } catch (error) {
-    console.error("Lỗi khi tạo đề từ bảng đặc tả:", error);
-    throw new Error("Không thể tạo đề kiểm tra từ bảng đặc tả.");
+    console.error("Lỗi khi tạo đề:", error);
+    throw error;
+  }
+};
+
+export const generateSimilarQuizFromFile = async (content: { data?: string, mimeType?: string, text?: string }): Promise<QuizQuestion[]> => {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) throw new Error("API Key chưa được cấu hình.");
+
+  const ai = new GoogleGenAI({ apiKey });
+  const promptText = `
+    Bạn là chuyên gia giáo dục. Hãy phân tích đề kiểm tra được cung cấp và thực hiện:
+    1. Nhận diện các câu hỏi, chủ đề và mức độ kiến thức.
+    2. Tạo một bộ đề MỚI gồm 10 câu hỏi có tính chất TƯƠNG TỰ đề gốc (cùng chủ đề, độ khó) nhưng THAY ĐỔI số liệu hoặc nội dung cụ thể.
+    3. Đảm bảo sử dụng LaTeX ($...$ hoặc $$...$$) và cung cấp lời giải chi tiết.
+    4. Trả về mảng JSON QuizQuestion.
+  `;
+
+  const parts: any[] = [];
+  if (content.data && content.mimeType) {
+    parts.push({ inlineData: { data: content.data, mimeType: content.mimeType } });
+  } else if (content.text) {
+    parts.push({ text: `Nội dung đề gốc: \n${content.text}` });
+  }
+  parts.push({ text: promptText });
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: [{ parts }],
+      config: {
+        thinkingConfig: { thinkingBudget: 1000 },
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              id: { type: Type.STRING },
+              cauHoi: { type: Type.STRING },
+              dapAn: { type: Type.STRING },
+              loaiCauHoi: { type: Type.STRING },
+              huongDanChamDiem: { type: Type.STRING },
+              drawingCode: { type: Type.STRING },
+              metadata: {
+                type: Type.OBJECT,
+                properties: {
+                  chuDe: { type: Type.STRING },
+                  noiDung: { type: Type.STRING },
+                  mucDo: { type: Type.STRING }
+                }
+              }
+            },
+            required: ["cauHoi", "dapAn", "loaiCauHoi", "huongDanChamDiem"]
+          }
+        }
+      }
+    });
+    const qs = parseJsonResponse<QuizQuestion[]>(response.text.trim());
+    return qs.map(q => ({ ...q, id: q.id || Math.random().toString(36).substr(2, 9) }));
+  } catch (error) {
+    console.error("Lỗi khi tạo đề tương tự:", error);
+    throw error;
+  }
+};
+
+export const regenerateSingleQuestion = async (oldQuestion: QuizQuestion, selectedClass: string, selectedSubject: string): Promise<QuizQuestion> => {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) throw new Error("API Key chưa được cấu hình.");
+
+  const ai = new GoogleGenAI({ apiKey });
+  const prompt = `
+    Tạo 1 câu hỏi ${selectedSubject} ${selectedClass} mới (KHÁC câu cũ: ${oldQuestion.cauHoi}) cùng tiêu chí:
+    - Loại: ${oldQuestion.loaiCauHoi}
+    - Chủ đề: ${oldQuestion.metadata?.chuDe}
+    - Mức độ: ${oldQuestion.metadata?.mucDo}
+    
+    Yêu cầu: LaTeX chuẩn, lời giải chi tiết. 
+    Nếu có hình vẽ minh họa, cung cấp mã JS vẽ Canvas vào 'drawingCode'.
+    JSON duy nhất.
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: prompt,
+      config: {
+        thinkingConfig: { thinkingBudget: 1000 },
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            id: { type: Type.STRING },
+            cauHoi: { type: Type.STRING },
+            dapAn: { type: Type.STRING },
+            loaiCauHoi: { type: Type.STRING },
+            huongDanChamDiem: { type: Type.STRING },
+            drawingCode: { type: Type.STRING },
+            metadata: {
+              type: Type.OBJECT,
+              properties: {
+                chuDe: { type: Type.STRING },
+                noiDung: { type: Type.STRING },
+                yeuCauCanDat: { type: Type.STRING },
+                mucDo: { type: Type.STRING },
+              }
+            }
+          },
+          required: ["cauHoi", "dapAn", "loaiCauHoi", "huongDanChamDiem"]
+        }
+      }
+    });
+    const newQ = parseJsonResponse<QuizQuestion>(response.text.trim());
+    return { ...newQ, id: oldQuestion.id, metadata: oldQuestion.metadata };
+  } catch (error) {
+    console.error("Lỗi khi tạo lại câu hỏi:", error);
+    throw error;
   }
 };
