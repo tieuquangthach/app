@@ -6,6 +6,9 @@ export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     return {
         base: '/',
+        build: {
+    outDir: 'dist', // Đảm bảo đầu ra đúng thư mục mà robot đang đợi
+  },
       server: {
         port: 3000,
         host: '0.0.0.0',
