@@ -49,3 +49,13 @@ export const regenerateSingleQuestion = async (
   console.log("Đang tạo lại câu hỏi:", currentQuestion);
   return `Đây là câu hỏi được tạo lại từ nội dung: ${currentQuestion.substring(0, 20)}...`;
 };
+// --- DÁN ĐOẠN NÀY VÀO CUỐI FILE geminiService.ts ---
+
+export const regenerateSingleQuestion = async (
+  currentQuestion: string,
+  userPrompt: string,
+  apiKey: string
+): Promise<string> => {
+  console.log("Placeholder for regenerateSingleQuestion");
+  return "Tính năng đang cập nhật...";
+};
