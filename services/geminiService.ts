@@ -1,4 +1,6 @@
-// Định nghĩa lại interface để tránh lỗi build (nếu file cũ bị mất)
+import { GoogleGenAI } from "@google/generative-ai";
+
+// 1. Khai báo các kiểu dữ liệu để tránh lỗi TypeScript
 interface HeaderInfo {
   ubnd: string;
   tenTruong: string;
@@ -9,22 +11,27 @@ interface HeaderInfo {
   namHoc: string;
 }
 
-// 1. Hàm lấy API Key (Ưu tiên Vercel Env -> LocalStorage)
-export const Fa = (): string => {
+// 2. Hàm lấy API Key an toàn
+// Ưu tiên: Biến môi trường Vercel (VITE_) -> LocalStorage
+export const getApiKey = (): string => {
   const envKey = import.meta.env.VITE_GEMINI_API_KEY;
   return (envKey as string) || localStorage.getItem("GEMINI_API_KEY") || "";
 };
 
-// 2. Hàm xử lý JSON
-export const Ja = (i: string): any => {
+// 3. Hàm xử lý dữ liệu JSON từ AI
+export const cleanAndParseJSON = (text: string): any => {
   try {
-    const cleanJson = i.replace(/```json|```/g, "").trim();
+    const cleanJson = text.replace(/```json|```/g, "").trim();
     return JSON.parse(cleanJson);
   } catch (e) {
-    console.error("Lỗi phân tích JSON:", i, e);
-    throw new Error("Phản hồi từ AI không hợp lệ.");
+    console.error("Lỗi phân tích JSON từ Gemini:", text, e);
+    throw new Error("Phản hồi từ AI không đúng định dạng JSON.");
   }
 };
 
-// Lưu ý: Đảm bảo các class như Pa hoặc các hàm EA, _A bên dưới 
-// vẫn sử dụng biến apiKey lấy từ hàm Fa() ở trên.
+/**
+ * Lưu ý quan trọng: 
+ * Đảm bảo bạn đã cài đặt thư viện bằng lệnh: npm install @google/generative-ai
+ * Nếu file App.tsx gọi hàm Fa hoặc Ja, hãy đổi tên chúng thành getApiKey hoặc cleanAndParseJSON 
+ * cho đồng nhất hoặc giữ nguyên tên cũ nếu bạn muốn.
+ */
