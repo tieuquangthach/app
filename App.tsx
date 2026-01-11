@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import MatrixWorkflow from './components/MatrixWorkflow';
 import SimilarExercisesWorkflow from './components/SimilarExercisesWorkflow';
@@ -18,7 +17,11 @@ const App: React.FC = () => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isAiConfigOpen, setIsAiConfigOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("TẠO ĐỀ KIỂM TRA BẰNG AI");
-  const [hasApiKey, setHasApiKey] = useState(false);
+  
+  // KIỂM TRA API KEY: Ưu tiên Vercel (VITE_) > LocalStorage > window.aistudio
+  const [hasApiKey, setHasApiKey] = useState(() => {
+    return !!import.meta.env.VITE_GEMINI_API_KEY || !!localStorage.getItem("GEMINI_API_KEY");
+  });
   
   const dropdownRef = useRef<HTMLLIElement>(null);
   const configRef = useRef<HTMLDivElement>(null);
@@ -40,8 +43,14 @@ const App: React.FC = () => {
   const hiddenTabs = allTabs.slice(3);
 
   useEffect(() => {
+    // Cập nhật trạng thái hasApiKey khi component mount
     const checkKey = async () => {
-      if (window.aistudio) {
+      const fromEnv = !!import.meta.env.VITE_GEMINI_API_KEY;
+      const fromStorage = !!localStorage.getItem("GEMINI_API_KEY");
+      
+      if (fromEnv || fromStorage) {
+        setHasApiKey(true);
+      } else if (window.aistudio) {
         const connected = await window.aistudio.hasSelectedApiKey();
         setHasApiKey(connected);
       }
@@ -67,11 +76,17 @@ const App: React.FC = () => {
 
   const handleOpenKeySelection = async () => {
     if (window.aistudio) {
-      // Khi người dùng nhấn vào ô nhập, mở trình chọn khóa của hệ thống
-      // Khóa sau đó sẽ tự động khả dụng qua process.env.API_KEY
       await window.aistudio.openSelectKey();
       setHasApiKey(true);
       setIsAiConfigOpen(false);
+    } else {
+      // Nếu không có aistudio, có thể hướng dẫn người dùng dán vào LocalStorage hoặc thông báo
+      const manualKey = prompt("Vui lòng nhập Gemini API Key của bạn:");
+      if (manualKey) {
+        localStorage.setItem("GEMINI_API_KEY", manualKey);
+        setHasApiKey(true);
+        window.location.reload();
+      }
     }
   };
 
@@ -98,7 +113,6 @@ const App: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-3 flex-shrink-0">
-            {/* NÚT CẤU HÌNH AI - GIỐNG ẢNH MẪU */}
             <div className="relative" ref={configRef}>
               <button 
                 onClick={() => setIsAiConfigOpen(!isAiConfigOpen)}
@@ -129,18 +143,17 @@ const App: React.FC = () => {
                          <label className="text-sm font-bold text-slate-700">Google Gemini API Key:</label>
                       </div>
                       
-                      {/* Ô NHẬP API DẠNG PASSWORD MASKED - CHỈ CHO PHÉP DÁN (QUA OPENSELECTKEY) */}
                       <div 
                         onClick={handleOpenKeySelection}
                         className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3.5 cursor-text hover:border-blue-400 transition-all shadow-sm group overflow-hidden"
                       >
                         <p className="text-slate-400 font-medium text-sm tracking-widest truncate">
-                          {hasApiKey ? '••••••••••••••••••••••••••••••••••••' : 'Nhấn để dán API Key...'}
+                          {hasApiKey ? '••••••••••••••••••••••••••••••••••••' : 'Nhấn để cấu hình API Key...'}
                         </p>
                       </div>
 
                       <a 
-                        href="https://ai.google.dev/gemini-api/docs/billing" 
+                        href="https://aistudio.google.com/app/apikey" 
                         target="_blank" 
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-2 text-xs font-bold text-blue-500 hover:text-blue-600 transition-colors"
@@ -148,7 +161,7 @@ const App: React.FC = () => {
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                         </svg>
-                        HD Lấy API Key tại đây
+                        Lấy API Key tại Google AI Studio
                       </a>
                     </div>
 
@@ -160,7 +173,7 @@ const App: React.FC = () => {
                          className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer" 
                        />
                        <label htmlFor="rememberKey" className="text-[14px] font-bold text-slate-600 cursor-pointer">
-                          Ghi nhớ API Key (lưu trong trình duyệt)
+                          Ghi nhớ trạng thái (Vercel/Browser)
                        </label>
                     </div>
                   </div>
