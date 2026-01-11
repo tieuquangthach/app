@@ -1,13 +1,18 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import MatrixWorkflow from './components/MatrixWorkflow';
 import SimilarExercisesWorkflow from './components/SimilarExercisesWorkflow';
 
 const App: React.FC = () => {
+  // --- STATE QUẢN LÝ TABS VÀ GIAO DIỆN ---
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("TẠO ĐỀ KIỂM TRA BẰNG AI");
   const dropdownRef = useRef<HTMLLIElement>(null);
 
+  // --- STATE QUẢN LÝ API KEY MODAL ---
+  const [showApiModal, setShowApiModal] = useState(false);
+  const [tempKey, setTempKey] = useState(localStorage.getItem('GEMINI_API_KEY') || '');
+
+  // Cấu hình các Tabs
   const allTabs = [
     "TẠO ĐỀ KIỂM TRA BẰNG AI",
     "TẠO BÀI TẬP TƯƠNG TỰ",
@@ -24,6 +29,18 @@ const App: React.FC = () => {
   const visibleTabs = allTabs.slice(0, 3);
   const hiddenTabs = allTabs.slice(3);
 
+  // --- LOGIC XỬ LÝ ---
+  
+  // Tự động nhắc nhở nhập Key nếu chưa có
+  useEffect(() => {
+    const savedKey = localStorage.getItem('GEMINI_API_KEY');
+    if (!savedKey && !import.meta.env.VITE_GEMINI_API_KEY) {
+      const timer = setTimeout(() => setShowApiModal(true), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
+  // Đóng dropdown khi click ra ngoài
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -37,6 +54,23 @@ const App: React.FC = () => {
   const handleTabClick = (tab: string) => {
     setActiveTab(tab);
     setIsDropdownOpen(false);
+  };
+
+  const handleSaveKey = () => {
+    if (tempKey.trim()) {
+      localStorage.setItem('GEMINI_API_KEY', tempKey.trim());
+      setShowApiModal(false);
+      window.location.reload(); // Tải lại để hệ thống nhận Key mới
+    } else {
+      alert("Vui lòng nhập mã API Key hợp lệ.");
+    }
+  };
+
+  const handleClearKey = () => {
+    localStorage.removeItem('GEMINI_API_KEY');
+    setTempKey('');
+    alert("Đã xóa Key cá nhân. Hệ thống sẽ dùng Key mặc định nếu có.");
+    window.location.reload();
   };
 
   return (
@@ -90,14 +124,7 @@ const App: React.FC = () => {
                 <span className={`text-[11px] font-black ${hiddenTabs.includes(activeTab) ? 'text-blue-900' : 'group-hover:text-blue-900'}`}>
                   {hiddenTabs.includes(activeTab) ? activeTab : 'XEM THÊM'}
                 </span>
-                <svg 
-                  className={`w-4 h-4 transition-transform duration-300 ${isDropdownOpen ? 'rotate-180' : ''}`} 
-                  fill="none" 
-                  stroke="currentColor" 
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M19 9l-7 7-7-7" />
-                </svg>
+                <svg className={`w-4 h-4 transition-transform duration-300 ${isDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M19 9l-7 7-7-7" /></svg>
               </button>
 
               {isDropdownOpen && (
@@ -121,26 +148,14 @@ const App: React.FC = () => {
       {/* NỘI DUNG CHÍNH */}
       <main className="flex-grow py-8 px-4">
         <div className={`max-w-7xl mx-auto bg-white rounded-3xl shadow-2xl shadow-blue-900/10 min-h-[600px] overflow-hidden ${activeTab === "TẠO BÀI TẬP TƯƠNG TỰ" ? 'p-0 min-h-[800px]' : 'p-4 md:p-8'}`}>
-          {activeTab === "TẠO ĐỀ KIỂM TRA BẰNG AI" && (
-            <MatrixWorkflow />
-          )}
-
-          {activeTab === "TẠO BÀI TẬP TƯƠNG TỰ" && (
-            <SimilarExercisesWorkflow />
-          )}
+          {activeTab === "TẠO ĐỀ KIỂM TRA BẰNG AI" && <MatrixWorkflow />}
+          {activeTab === "TẠO BÀI TẬP TƯƠNG TỰ" && <SimilarExercisesWorkflow />}
 
           {activeTab !== "TẠO ĐỀ KIỂM TRA BẰNG AI" && activeTab !== "TẠO BÀI TẬP TƯƠNG TỰ" && (
             <div className="flex flex-col items-center justify-center h-[500px] text-gray-400 text-center p-6">
-               <svg className="w-20 h-20 mb-4 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-               </svg>
-               <p className="text-xl font-bold uppercase tracking-widest italic">Tính năng {activeTab} đang được phát triển</p>
-               <button 
-                 onClick={() => setActiveTab(allTabs[0])}
-                 className="mt-6 px-6 py-2 bg-primary text-white font-bold rounded-xl hover:brightness-110 transition shadow-lg"
-               >
-                 Quay lại Tạo đề kiểm tra
-               </button>
+               <svg className="w-20 h-20 mb-4 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+               <p className="text-xl font-bold uppercase tracking-widest italic">Tính năng {activeTab} đang phát triển</p>
+               <button onClick={() => setActiveTab(allTabs[0])} className="mt-6 px-6 py-2 bg-primary text-white font-bold rounded-xl hover:brightness-110 transition shadow-lg">Quay lại</button>
             </div>
           )}
         </div>
@@ -151,28 +166,46 @@ const App: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 flex flex-col items-center space-y-8">
           <div className="flex items-center gap-6">
              <div className="flex items-center gap-3 group cursor-pointer">
-                <div className="w-12 h-12 bg-primary rounded-full flex items-center justify-center font-black text-white shadow-lg group-hover:scale-110 transition-transform">
-                    TQT
-                </div>
+                <div className="w-12 h-12 bg-primary rounded-full flex items-center justify-center font-black text-white shadow-lg group-hover:scale-110 transition-transform">TQT</div>
                 <div className="flex flex-col">
                     <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Created By</span>
                     <span className="text-sm font-black text-primary">Tiêu Quang Thạch</span>
                 </div>
              </div>
           </div>
-          <div className="flex justify-center gap-8 text-gray-400">
-             <span className="hover:text-primary cursor-pointer transition-colors flex items-center gap-2"><div className="w-1.5 h-1.5 bg-blue-500 rounded-full"></div> Facebook</span>
-             <span className="hover:text-primary cursor-pointer transition-colors flex items-center gap-2"><div className="w-1.5 h-1.5 bg-red-500 rounded-full"></div> Youtube</span>
-             <span className="hover:text-primary cursor-pointer transition-colors flex items-center gap-2"><div className="w-1.5 h-1.5 bg-black rounded-full"></div> TikTok</span>
-          </div>
-          <div className="text-gray-400 font-medium text-center max-w-md">
-            <p className="text-sm leading-relaxed">
-              © 2026 Hệ thống dạy học và kiểm tra tạo bởi AI.
-            </p>
-            <p className="text-[10px] mt-2 text-gray-300">Sử dụng công nghệ Trí tuệ nhân tạo (AI) để hỗ trợ giáo viên tối ưu hoá công việc.</p>
-          </div>
+          <p className="text-gray-400 text-sm font-medium">© 2026 Hệ thống dạy học và kiểm tra tạo bởi AI.</p>
         </div>
       </footer>
+
+      {/* --- PHẦN MODAL API KEY --- */}
+      <button 
+        onClick={() => setShowApiModal(true)}
+        className="fixed bottom-6 right-6 bg-primary text-white p-4 rounded-full shadow-2xl hover:scale-110 active:scale-95 transition-all z-50 border-4 border-white"
+      >
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg>
+      </button>
+
+      {showApiModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-[100] p-4 animate-fade-in">
+          <div className="bg-white rounded-[2.5rem] p-8 max-w-md w-full shadow-2xl border border-gray-100">
+            <h3 className="text-2xl font-black text-primary mb-2 uppercase italic">Cấu hình API Key</h3>
+            <p className="text-gray-400 text-sm mb-6">Lưu khóa cá nhân để sử dụng AI không giới hạn.</p>
+            <input 
+              type="password"
+              value={tempKey}
+              onChange={(e) => setTempKey(e.target.value)}
+              placeholder="Dán Gemini API Key tại đây..."
+              className="w-full px-5 py-4 rounded-2xl border-2 border-gray-100 focus:border-primary outline-none mb-4 font-mono text-sm bg-gray-50"
+            />
+            <div className="flex gap-3">
+              <button onClick={handleClearKey} className="px-3 py-2 text-xs font-bold text-red-500">XÓA</button>
+              <button onClick={() => setShowApiModal(false)} className="flex-1 py-4 font-bold text-gray-400">HỦY</button>
+              <button onClick={handleSaveKey} className="flex-1 py-4 bg-primary text-white font-bold rounded-2xl shadow-lg">KÍCH HOẠT</button>
+            </div>
+            <p className="mt-6 text-center text-xs text-gray-300">Lấy mã tại <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-secondary underline">Google AI Studio</a></p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
