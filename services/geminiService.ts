@@ -37,3 +37,15 @@ export const generateQuizFromSpec = async (specification: QuizSpecification, sel
     return qs.map(q => ({ ...q, id: q.id || Math.random().toString(36).substr(2, 9) }));
   } catch (error) { throw error; }
 };
+// --- THÊM ĐOẠN NÀY VÀO CUỐI FILE geminiService.ts ---
+
+export const regenerateSingleQuestion = async (
+  currentQuestion: string, 
+  userPrompt: string, 
+  apiKey: string
+): Promise<string> => {
+  // Đây là hàm giữ chỗ (Placeholder) để sửa lỗi Build trước
+  // Bạn có thể phát triển logic gọi AI thực sự sau
+  console.log("Đang tạo lại câu hỏi:", currentQuestion);
+  return `Đây là câu hỏi được tạo lại từ nội dung: ${currentQuestion.substring(0, 20)}...`;
+};
