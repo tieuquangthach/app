@@ -1,6 +1,15 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { QuizQuestion, QuizMatrix, QuizSpecification, SpecificationItem } from '../types';
+
+// Hàm hỗ trợ lấy API Key tập trung
+const getApiKey = (): string => {
+  // 1. Ưu tiên lấy Key người dùng nhập trực tiếp lưu trong trình duyệt
+  const savedKey = localStorage.getItem('GEMINI_API_KEY');
+  if (savedKey) return savedKey;
+
+  // 2. Nếu không có, lấy Key mặc định từ biến môi trường (cấu hình qua GitHub Secrets)
+  return import.meta.env.VITE_GEMINI_API_KEY || "";
+};
 
 const parseJsonResponse = <T>(jsonText: string): T => {
   try {
@@ -13,11 +22,9 @@ const parseJsonResponse = <T>(jsonText: string): T => {
 };
 
 export const generateSpecification = async (matrix: QuizMatrix, selectedClass: string, selectedSubject: string): Promise<QuizSpecification> => {
-const getApiKey = () => {
-const savedKey = localStorage.getItem('GEMINI_API_KEY');
-  if (savedKey) return savedKey;
-  return import.meta.env.VITE_GEMINI_API_KEY || "";
-};
+  const apiKey = getApiKey();
+  if (!apiKey) throw new Error("API Key chưa được cấu hình. Vui lòng nhập Key để tiếp tục.");
+  
   const ai = new GoogleGenAI({ apiKey });
   const matrixString = JSON.stringify(matrix, null, 2);
   const prompt = `
@@ -32,7 +39,7 @@ const savedKey = localStorage.getItem('GEMINI_API_KEY');
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-1.5-flash",
       contents: prompt,
       config: {
         thinkingConfig: { thinkingBudget: 0 },
@@ -82,7 +89,7 @@ export const generateQuizFromSpec = async (specification: QuizSpecification, sel
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-1.5-flash",
       contents: prompt,
       config: {
         thinkingConfig: { thinkingBudget: 1500 },
@@ -122,7 +129,7 @@ export const generateQuizFromSpec = async (specification: QuizSpecification, sel
 };
 
 export const generateSimilarQuizFromFile = async (content: { data?: string, mimeType?: string, text?: string }): Promise<QuizQuestion[]> => {
- const apiKey = getApiKey();
+  const apiKey = getApiKey();
   if (!apiKey) throw new Error("API Key chưa được cấu hình.");
 
   const ai = new GoogleGenAI({ apiKey });
@@ -144,7 +151,7 @@ export const generateSimilarQuizFromFile = async (content: { data?: string, mime
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-1.5-flash",
       contents: [{ parts }],
       config: {
         thinkingConfig: { thinkingBudget: 1000 },
@@ -183,7 +190,7 @@ export const generateSimilarQuizFromFile = async (content: { data?: string, mime
 };
 
 export const regenerateSingleQuestion = async (oldQuestion: QuizQuestion, selectedClass: string, selectedSubject: string): Promise<QuizQuestion> => {
-const apiKey = getApiKey();
+  const apiKey = getApiKey();
   if (!apiKey) throw new Error("API Key chưa được cấu hình.");
 
   const ai = new GoogleGenAI({ apiKey });
@@ -200,7 +207,7 @@ const apiKey = getApiKey();
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-1.5-flash",
       contents: prompt,
       config: {
         thinkingConfig: { thinkingBudget: 1000 },
