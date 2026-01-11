@@ -18,11 +18,11 @@ jobs:
         run: |
           npm install
           npm run build
-          env:
+        env:
+          # Robot lấy Key từ GitHub Secrets dán vào VITE_GEMINI_API_KEY
           VITE_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       - name: Deploy
         uses: JamesIves/github-pages-deploy-action@v4
         with:
-          folder: dist # Thư mục chứa cả index.html và assets
+          folder: dist
           branch: gh-pages
-          clean: true
