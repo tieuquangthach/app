@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+# Bỏ qua file chứa API key
+.env
+.env.local
