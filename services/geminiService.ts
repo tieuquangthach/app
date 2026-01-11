@@ -1,38 +1,39 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { QuizQuestion, QuizMatrix, QuizSpecification, SpecificationItem } from '../types';
 
-// Hàm lấy API Key ưu tiên từ người dùng nhập vào
-const getApiKey = (): string => {
-  const savedKey = localStorage.getItem('GEMINI_API_KEY');
-  if (savedKey) return savedKey;
-  return import.meta.env.VITE_GEMINI_API_KEY || "";
-};
+// Tích hợp Key trực tiếp từ biến môi trường của hệ thống build
+const API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
 
 const parseJsonResponse = <T>(jsonText: string): T => {
   try {
     const data = JSON.parse(jsonText.replace(/```json|```/g, '').trim());
     return data as T;
   } catch (error) {
-    console.error("Lỗi phân tích JSON:", error);
+    console.error("Lỗi phân tích JSON:", jsonText, error);
     throw new Error("Phản hồi từ AI không hợp lệ.");
   }
 };
 
-export const generateSpecification = async (matrix: QuizMatrix, selectedClass: string, selectedSubject: string): Promise<QuizSpecification> => {
-  const apiKey = getApiKey();
-  if (!apiKey) throw new Error("API Key chưa được cấu hình. Vui lòng nhấn biểu tượng chìa khóa để nhập mã.");
-  
-  const ai = new GoogleGenAI({ apiKey });
-  const prompt = `Chuyển ma trận môn ${selectedSubject} lớp ${selectedClass} thành bảng đặc tả chi tiết: ${JSON.stringify(matrix)}`;
+const ai = new GoogleGenAI(API_KEY);
+const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
 
+export const generateSpecification = async (matrix: QuizMatrix, selectedClass: string, selectedSubject: string): Promise<QuizSpecification> => {
+  if (!API_KEY) throw new Error("API Key chưa được tích hợp vào mã nguồn.");
+  
+  const prompt = `Bạn là chuyên gia khảo thí. Chuyển ma trận môn ${selectedSubject} lớp ${selectedClass} thành bảng đặc tả JSON: ${JSON.stringify(matrix)}`;
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-1.5-flash",
-      contents: prompt,
-      config: { responseMimeType: "application/json" }
-    });
-    return parseJsonResponse<SpecificationItem[]>(response.text.trim());
+    const result = await model.generateContent(prompt);
+    return parseJsonResponse<SpecificationItem[]>(result.response.text());
   } catch (error) { throw error; }
 };
 
-// ... Các hàm generateQuizFromSpec, generateSimilarQuizFromFile tương tự sử dụng getApiKey()
+export const generateQuizFromSpec = async (specification: QuizSpecification, selectedClass: string, selectedSubject: string): Promise<QuizQuestion[]> => {
+  if (!API_KEY) throw new Error("API Key chưa được tích hợp.");
+  
+  const prompt = `Soạn đề ${selectedSubject} lớp ${selectedClass} theo đặc tả: ${JSON.stringify(specification)}`;
+  try {
+    const result = await model.generateContent(prompt);
+    const qs = parseJsonResponse<QuizQuestion[]>(result.response.text());
+    return qs.map(q => ({ ...q, id: q.id || Math.random().toString(36).substr(2, 9) }));
+  } catch (error) { throw error; }
+};
