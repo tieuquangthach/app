@@ -2,7 +2,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { QuizQuestion, QuizMatrix, QuizSpecification, SpecificationItem } from '../types';
 
 // Tích hợp Key trực tiếp từ biến môi trường của hệ thống build
-const API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
+const API_KEY = "AIzaSyDxDMgExTEalrV4b30thDEvJxsAnUnuzmM";
 
 const parseJsonResponse = <T>(jsonText: string): T => {
   try {
